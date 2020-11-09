@@ -1,0 +1,201 @@
+---
+title: "lab5 team"
+author: "Jonathan Kelly"
+date: "11/8/2020"
+output: html_document
+---
+
+```{r setup, include=FALSE}
+knitr::opts_chunk$set(echo = TRUE)
+library(tidyverse)
+library(lubridate)
+
+acc <- read.csv("https://raw.githubusercontent.com/xdaiISU/ds202materials/master/hwlabs/fars2017/accident.csv", stringsAsFactors = FALSE)
+per <- read.csv("https://raw.githubusercontent.com/xdaiISU/ds202materials/master/hwlabs/fars2017/person.csv", stringsAsFactors = FALSE)
+GLC <- readxl::read_xlsx("FRPP_GLC_-_United_StatesSep292020.xlsx")
+states <- map_data("state")
+```
+
+## Question 1
+
+```{r}
+
+acc$DAY_WEEK <- as.factor(acc$DAY_WEEK)
+levels(acc$DAY_WEEK) <- c("Sunday", "Monday", "Tuesday", "Wensday", "Thursday", "Friday", "Saturday")
+acc %>% group_by(DAY_WEEK) %>% summarise(total = n()) %>% arrange(desc(total))
+```
+
+The weekend has the most accidents with Saturday having the most and Friday and Sunday having similar values but still fairly far ahead compared to the 4th highest day. 
+
+## Question 2
+
+```{r}
+fatalAcc <- per %>% filter(INJ_SEV == 4)
+head(fatalAcc)
+```
+
+Filtering the dataset where INJ_SER is equal to 4, or where the accident is fatal according to the manual.
+
+## Question 3
+
+```{r}
+InjuriesForMakeAndState <- per %>% select(STATE, INJ_SEV, MAKE) %>% filter(INJ_SEV == 4)
+
+totalFatalPerMakeAndState <- InjuriesForMakeAndState %>% group_by(STATE, MAKE) %>% summarize(total = sum(INJ_SEV)) %>% arrange(desc(total)) 
+totalFatalPerMakeAndState <- na.omit(totalFatalPerMakeAndState)
+totalFatalPerMakeAndState <- totalFatalPerMakeAndState %>% group_by(STATE) %>% slice(1)
+
+head(totalFatalPerMakeAndState)
+```
+
+This new dataset shows the most dangerous vechical make for each state and how many fatal accidents that make has had in the state
+
+## Question 4
+
+```{r}
+GLC$`State Code` = as.numeric(GLC$`State Code`)
+totalFatalPerMakeAndState$MAKE = as.factor(totalFatalPerMakeAndState$MAKE)
+
+dangerousMakeState= totalFatalPerMakeAndState %>%
+  left_join(GLC %>% select(c('State Name', 'State Code')), by = c('STATE' = 'State Code')) %>% 
+  unique() %>% mutate(`State Name` = tolower(`State Name`)) %>% 
+  left_join(states %>% select(long, lat, region), by = c('State Name' = 'region'))
+
+dangerMakeLocation = dangerousMakeState %>% 
+  group_by(STATE, MAKE) %>% 
+  summarise(long = mean(long, na.rm = TRUE), lat = mean(lat, na.rm = TRUE))
+
+levels(dangerMakeLocation$MAKE) =  c("F", "C", "T", "H")
+
+ggplot(states, aes(x = long, y = lat)) + 
+  geom_polygon(aes(group = group)) +
+  geom_path(aes(group = group), color = 'grey') +
+  geom_text(data = dangerMakeLocation, aes(x = long, y = lat, label = MAKE, color = MAKE)) +
+  coord_map() + ggtitle('Most Dangerous Vehicle Company in 2017 for each State') +
+  labs(color = 'Vehicle Company') +
+  scale_color_manual(values = c("#4287f5", "#ebe42a", "#f03f24", "#4df21b"), labels = c("F - Ford", "C - Chevrolet", "T - Toyota", "H - Honda"))
+
+```
+
+Chevrolet and Ford have a the majority of the most fatal vehicles by state, interestingly Chevy is mostly in the mid west and ford closer to the coasts.
+
+## Question 5
+
+```{r}
+accidentsAndPeople <- inner_join(acc, per, by="ST_CASE")
+head(accidentsAndPeople)
+```
+
+## Question 6
+
+```{r}
+
+filteredAccidentsAndPeople <- accidentsAndPeople %>%
+  filter(HOUR.x >= 0 & HOUR.x <= 23)%>%
+  filter(SEX == 1 | SEX == 2)
+
+filteredAccidentsAndPeople$DAY_WEEK = as.factor(filteredAccidentsAndPeople$DAY_WEEK)
+levels(filteredAccidentsAndPeople$DAY_WEEK) <- c("Sunday", "Monday", "Tuesday", "Wensday", "Thursday", "Friday", "Saturday")
+filteredAccidentsAndPeople$SEX = as.factor(filteredAccidentsAndPeople$SEX)
+levels(filteredAccidentsAndPeople$SEX) =  c("Male", "Female")
+
+filteredAccidentsAndPeople%>%
+  group_by(DAY_WEEK)%>%
+  tally()%>%
+  ggplot(aes(x = DAY_WEEK, y = n)) +
+  geom_bar(stat='identity')+
+  ggtitle("Number of Accidents by Day of the Week")+
+  ylab("Number of Accidents")+
+  xlab("Day of the Week")
+
+filteredAccidentsAndPeople%>%
+  group_by(HOUR.x)%>%
+  tally()%>%
+  ggplot(aes(x = HOUR.x, y = n)) +
+  geom_bar(stat='identity')+
+  ggtitle("Number of Accidents by Hour of the Day")+
+  xlab("Hour of the Day")+
+  ylab("Number of Accidents")
+
+filteredAccidentsAndPeople%>%
+  group_by(SEX)%>%
+  tally()%>%
+  ggplot(aes(x = SEX, y = n)) +
+  geom_bar(stat='identity', width = 0.5)+
+  ggtitle("Number of Accidents by Sex")+
+  xlab("Sex")+
+  ylab("Number of Accidents")
+
+filteredAccidentsAndPeople %>%
+  group_by(DAY_WEEK, HOUR.x, SEX) %>%
+  summarise(total = n(), .groups = 'drop') %>%
+  ggplot(aes(x = HOUR.x, y = total, fill = SEX)) +
+  geom_bar(stat = 'identity') +
+  facet_wrap(~DAY_WEEK) +
+  ggtitle('Number of Accidents per Gender, Day of Week, and Hour') +
+  xlab('Hour of day') +
+  ylab('Accidents') +
+  labs(fill = 'Gender')
+```
+
+The weekend has the most accidents with Saturday having the most, with most accidents occurring from 4-6 which would correspond with rush hour traffic, and males have more accidents than Females. 
+
+
+## Question7
+
+```{r}
+
+countryData <- map_data("county")
+GLC$`State Name` <- tolower(GLC$`State Name`)
+GLC$`County Name`<- tolower(GLC$`County Name`)
+
+countryData <- countryData %>% left_join(GLC, by = c('region' = 'State Name', 'subregion' = 'County Name'))
+
+countryData$`County Code` <- as.numeric(countryData$`County Code`)
+countryData$`State Code` <- as.numeric(countryData$`State Code`)
+
+fatalAccByStateAndCounty <- fatalAcc %>%
+  group_by(STATE, COUNTY) %>%
+  summarize(total = n())
+
+fatalAccByStateAndCounty <- fatalAccByStateAndCounty %>% right_join(countryData, by = c('COUNTY' = 'County Code', 'STATE'= 'State Code'))
+
+fatalAccByStateAndCounty$total[is.na(fatalAccByStateAndCounty$total)] <- 0
+
+ggplot(fatalAccByStateAndCounty, aes(x = long, y = lat, fill = total)) + 
+  geom_polygon(aes(group = group)) + 
+  geom_path(data = states, aes(x = long, y = lat, group = group), inherit.aes=FALSE, size= 0.5, color='black')+
+  scale_fill_gradient2(low="slategray", mid="slategray2", high="slategray4" , breaks = c(0, 100,200,300,400,500)) +
+  ggtitle('Fatal Accidents by County and State') + coord_map()
+
+```
+
+Counties around LA seem to be the most dangerous, which makes sense with how dense southern California is. Interestingly though Ney York and the north east seem very safe and the phoenix area seems much more dangerous that I would have expected.
+
+## Question 8
+
+```{r}
+
+winter <- fatalAcc %>% filter(MONTH == 12 | MONTH == 1 | MONTH == 2)
+summer <- fatalAcc %>% filter(MONTH == 6 | MONTH == 7 | MONTH == 8)
+
+winter <- winter %>% group_by(STATE) %>% summarize(total = n()) %>% right_join(countryData, by = c("STATE" = "State Code"))
+summer <- summer %>% group_by(STATE) %>% summarize(total = n()) %>% right_join(countryData, by = c("STATE" = "State Code"))
+
+winter$total[is.na(winter$total)] <- 0
+summer$total[is.na(summer$total)] <- 0
+
+b2 <- c(0, 100, 200, 300, 400, 500, 600, 700, 800, 900, 1000)
+  
+ggplot(winter, aes(x = long, y = lat, fill = total)) + 
+  geom_polygon(aes(group = group)) + 
+  geom_path(data = states, aes(x = long, y = lat, group = group), inherit.aes=FALSE, size= 0.5, color='black')+
+  scale_fill_gradient2(low="slategray", mid = "slategray2" ,high="slategray4", breaks = b2) +ggtitle('Winter Fatalities Density Map') + coord_map()
+
+
+ggplot(summer, aes(x = long, y = lat, fill = total)) + 
+  geom_polygon(aes(group = group)) + 
+  geom_path(data = states, aes(x = long, y = lat, group = group), inherit.aes=FALSE, size= 0.5, color='black')+
+  scale_fill_gradient2(low="slategray", mid = "slategray2" ,high="slategray4", breaks = b2) + ggtitle('Summer Fatalities Density Map') + coord_map()
+```
+
